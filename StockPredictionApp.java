@@ -1,140 +1,90 @@
-import javafx.application.Application;
-import javafx.application.Platform;
-import javafx.scene.Scene;
-import javafx.scene.chart.LineChart;
-import javafx.scene.chart.NumberAxis;
-import javafx.scene.chart.XYChart;
-import javafx.scene.control.*;
-import javafx.scene.layout.VBox;
-import javafx.stage.Stage;
+import javax.swing.*;
+import java.awt.*;
 import java.util.List;
 
-/**
- * JavaFX application for stock price prediction visualization.
- * Implements the view layer of the application, separating UI concerns
- * from business logic and data access.
- */
-public final class StockPredictionApp extends Application {
-  private LineChart<Number, Number> chart;
-  private TextField stockSymbolInput;
-  private Button predictBtn;
-  private ComboBox<String> methodComboBox;
-  private ProgressIndicator progressIndicator;
+public class StockPredictionApp extends JFrame {
+  private JTextField stockSymbolField;
+  private JButton predictButton;
+  private JTextArea resultArea;
 
-  @Override
-  public void start(Stage stage) {
-    initializeUIComponents();
-    setupLayout(stage);
-  }
+  public StockPredictionApp() {
+    setTitle("StockPridictionApp");
+    setSize(500, 400);
+    setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+    setLocationRelativeTo(null);
 
-  private void initializeUIComponents() {
-    stockSymbolInput = new TextField("AAPL");
-    predictBtn = new Button("Predict");
-    methodComboBox = new ComboBox<>();
-    progressIndicator = new ProgressIndicator();
-    progressIndicator.setVisible(false);
+    stockSymbolField = new JTextField("AAPL", 10);
+    predictButton = new JButton("Predict");
+    resultArea = new JTextArea();
+    resultArea.setEditable(false);
 
-    methodComboBox.getItems().addAll("Moving Average", "Linear Regression");
-    methodComboBox.setValue("Moving Average");
+    JPanel inputPanel = new JPanel();
+    inputPanel.add(new JLabel("STOCK SYMBOL:"));
+    inputPanel.add(stockSymbolField);
+    inputPanel.add(predictButton);
 
-    NumberAxis xAxis = new NumberAxis("Days", 0, 30, 1);
-    NumberAxis yAxis = new NumberAxis("Price", 0, 500, 10);
-    chart = new LineChart<>(xAxis, yAxis);
-    chart.setTitle("Stock Price Prediction");
-    chart.setAnimated(false); // Better performance
+    JScrollPane scrollPane = new JScrollPane(resultArea);
 
-    setupButtonAction();
-  }
+    setLayout(new BorderLayout());
+    add(inputPanel, BorderLayout.NORTH);
+    add(scrollPane, BorderLayout.CENTER);
 
-  private void setupButtonAction() {
-    predictBtn.setOnAction(e -> {
-      String symbol = stockSymbolInput.getText().trim();
+    predictButton.addActionListener(e -> {
+      String symbol = stockSymbolField.getText().trim();
       if (symbol.isEmpty()) {
-        showAlert("Error", "Please enter a stock symbol (e.g., AAPL)");
+        JOptionPane.showMessageDialog(this, "Please enter Storck Symble", "Error", JOptionPane.ERROR_MESSAGE);
         return;
       }
 
-      setUILoadingState(true);
+      predictButton.setEnabled(false);
+      predictButton.setText("Predicting...");
 
       new Thread(() -> {
         try {
           List<Double> prices = StockDataCache.getData(symbol, false);
-          List<Double> predicted = getPrediction(methodComboBox.getValue(), prices);
+          List<Double> movingAvg = StockPredictor.predictMovingAverage(prices, 5);
+          double regressionPrediction = StockPredictor.predictLinearRegression(prices).get(1);
 
-          Platform.runLater(() -> {
-            updateChart(prices, predicted);
-            setUILoadingState(false);
+          SwingUtilities.invokeLater(() -> {
+            displayResults(symbol, prices, movingAvg, regressionPrediction);
+            predictButton.setEnabled(true);
+            predictButton.setText("Predict");
           });
         } catch (Exception ex) {
-          Platform.runLater(() -> {
-            showAlert("Prediction Error",
-                "Failed to get prediction: " + ex.getMessage());
-            setUILoadingState(false);
+          SwingUtilities.invokeLater(() -> {
+            resultArea.setText("Error: " + ex.getMessage());
+            predictButton.setEnabled(true);
+            predictButton.setText("Predict");
           });
         }
       }).start();
     });
   }
 
-  private List<Double> getPrediction(String method, List<Double> prices) {
-    if ("Moving Average".equals(method)) {
-      return StockPredictor.predictMovingAverage(prices, 5);
-    } else {
-      double futurePrice = StockPredictor.predictLinearRegression(prices);
-      return List.of(prices.get(0), futurePrice); // Current and predicted price
-    }
-  }
+  private void displayResults(String symbol, List<Double> prices,
+      List<Double> movingAvg, double regressionPrediction) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("=== ").append(symbol).append(" Predict result ===\n\n");
 
-  private void setUILoadingState(boolean loading) {
-    predictBtn.setDisable(loading);
-    progressIndicator.setVisible(loading);
-    predictBtn.setText(loading ? "Predicting..." : "Predict");
-  }
-
-  private void setupLayout(Stage stage) {
-    VBox root = new VBox(10,
-        new Label("Stock Symbol (e.g., AAPL/MSFT):"),
-        stockSymbolInput,
-        new Label("Prediction Method:"),
-        methodComboBox,
-        new HBox(10, predictBtn, progressIndicator),
-        chart
-    );
-    root.setPadding(new javafx.geometry.Insets(10));
-
-    stage.setScene(new Scene(root, 800, 600));
-    stage.setTitle("Java Stock Prediction System");
-    stage.show();
-  }
-
-  private void updateChart(List<Double> prices, List<Double> predicted) {
-    chart.getData().clear();
-
-    XYChart.Series<Number, Number> historySeries = new XYChart.Series<>();
-    historySeries.setName("Historical Data");
-    for (int i = 0; i < prices.size(); i++) {
-      historySeries.getData().add(new XYChart.Data<>(i, prices.get(i)));
+    sb.append("Ending price for 5 days:\n");
+    for (int i = 0; i < Math.min(5, prices.size()); i++) {
+      sb.append(String.format("The %d day: %.2f\n", i+1, prices.get(i)));
     }
 
-    XYChart.Series<Number, Number> predictedSeries = new XYChart.Series<>();
-    predictedSeries.setName("Predicted Data");
-    int startIndex = prices.size() - predicted.size();
-    for (int i = 0; i < predicted.size(); i++) {
-      predictedSeries.getData().add(new XYChart.Data<>(startIndex + i, predicted.get(i)));
+    sb.append("\nAverage move for 5 days:\n");
+    for (int i = 0; i < movingAvg.size(); i++) {
+      sb.append(String.format("The %d day: %.2f\n", i+1, movingAvg.get(i)));
     }
 
-    chart.getData().addAll(historySeries, predictedSeries);
-  }
+    sb.append(String.format("\nLinear regression predicts the next day's price: %.2f", regressionPrediction));
 
-  private void showAlert(String title, String message) {
-    Alert alert = new Alert(Alert.AlertType.ERROR);
-    alert.setTitle(title);
-    alert.setHeaderText(null);
-    alert.setContentText(message);
-    alert.show();
+    resultArea.setText(sb.toString());
   }
 
   public static void main(String[] args) {
-    launch(args);
+    SwingUtilities.invokeLater(() -> {
+      StockPredictionApp app = new StockPredictionApp();
+      app.setVisible(true);
+    });
   }
 }
