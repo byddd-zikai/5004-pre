@@ -51,6 +51,19 @@ public final class StockPredictor {
     return lastPrice * 1.05; // Simplified prediction: 5% increase
   }
 
-  private static void validateInput(List<Double> prices, int window) {
-    if (prices == null) {
-      throw new IllegalArgumentException
+ private static void validateInput(List<Double> prices, int window) {
+        if (prices == null) {
+            throw new IllegalArgumentException("Prices list cannot be null");
+        }
+        if (prices.isEmpty()) {
+            throw new IllegalArgumentException("Prices list cannot be empty");
+        }
+        if (window <= 0) {
+            throw new IllegalArgumentException("Window size must be positive");
+        }
+        if (window > prices.size()) {
+            throw new IllegalArgumentException(
+                "Window size cannot be larger than prices list size");
+        }
+    }
+}
