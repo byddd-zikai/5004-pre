@@ -1,35 +1,25 @@
+import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Scanner;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import com.google.gson.JsonSyntaxException;
 
-/**
- * Fetches stock data from Alpha Vantage API.
- * Handles all HTTP communication and JSON parsing, providing a clean interface
- * for stock price retrieval. Implements proper error handling and fallback.
- */
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+
 public final class StockDataFetcher {
-  private static final String API_KEY = "YOUR_API_KEY";
-  private static final String API_URL =
-      "https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=%s&apikey=%s";
+  private static final String YAHOO_FINANCE_JSON_API =
+      "https://query1.finance.yahoo.com/v7/finance/chart/%s?period1=1695497364&period2=1727119764&interval=1d&events=history&includeAdjustedClose=true";
+
   private static final int MAX_DAYS = 30;
 
   private StockDataFetcher() {
-    // Private constructor to prevent instantiation
   }
 
-  /**
-   * Fetches historical closing prices for the given stock symbol.
-   *
-   * @param symbol Stock symbol to fetch (e.g., "AAPL")
-   * @return Unmodifiable list of closing prices (most recent first)
-   * @throws IllegalArgumentException if symbol is null or empty
-   * @throws StockDataFetchException if data cannot be retrieved or parsed
-   */
+
   public static List<Double> fetchStockPrices(String symbol) throws StockDataFetchException {
     if (symbol == null || symbol.trim().isEmpty()) {
       throw new IllegalArgumentException("Stock symbol cannot be null or empty");
@@ -37,61 +27,84 @@ public final class StockDataFetcher {
 
     try {
       String normalizedSymbol = symbol.trim().toUpperCase();
-      return fetchFromAPI(normalizedSymbol);
+      String jsonData = fetchJSONFromYahooFinance(normalizedSymbol);
+      return parseJSONData(jsonData);
+    } catch (StockDataFetchException e) {
+      throw e;
     } catch (Exception e) {
-      System.err.println("Failed to fetch stock data: " + e.getMessage());
-      return getMockData(); // Fallback to mock data
+      System.err.println("Failed to fetch stock data from Yahoo Finance: " + e.getMessage());
+      return getMockData();
     }
   }
 
-  private static List<Double> fetchFromAPI(String symbol) throws StockDataFetchException {
+  private static String fetchJSONFromYahooFinance(String symbol) throws StockDataFetchException {
     try {
-      URL url = new URL(String.format(API_URL, symbol, API_KEY));
+      URL url = new URL(String.format(YAHOO_FINANCE_JSON_API, symbol));
       HttpURLConnection conn = (HttpURLConnection) url.openConnection();
       conn.setRequestMethod("GET");
       conn.setConnectTimeout(5000);
       conn.setReadTimeout(5000);
+      conn.setRequestProperty("User-Agent", "Mozilla/5.0"); // 模拟浏览器请求
 
       if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
         throw new StockDataFetchException(
-            "API request failed with HTTP code: " + conn.getResponseCode());
+            "Yahoo Finance API request failed with HTTP code: " + conn.getResponseCode());
       }
 
-      String jsonResponse = new Scanner(conn.getInputStream()).useDelimiter("\\A").next();
-      return parseJsonResponse(jsonResponse);
+      try (Scanner scanner = new Scanner(conn.getInputStream())) {
+        scanner.useDelimiter("\\A");
+        return scanner.hasNext() ? scanner.next() : "";
+      }
     } catch (Exception e) {
-      throw new StockDataFetchException("Failed to fetch stock data: " + e.getMessage(), e);
+      throw new StockDataFetchException("Failed to fetch JSON data from Yahoo Finance: " + e.getMessage(), e);
     }
   }
 
-  private static List<Double> parseJsonResponse(String jsonResponse)
-      throws StockDataFetchException {
-    try {
-      JsonObject json = JsonParser.parseString(jsonResponse).getAsJsonObject();
 
-      if (!json.has("Time Series (Daily)")) {
-        throw new StockDataFetchException("Invalid API response: missing time series data");
+  private static List<Double> parseJSONData(String jsonData) throws StockDataFetchException {
+    try {
+      JSONObject jsonObject = new JSONObject(jsonData);
+      JSONObject chart = jsonObject.getJSONObject("chart");
+
+      // 检查返回的错误信息（若存在）
+      if (!chart.isNull("error")) {
+        JSONObject error = chart.getJSONObject("error");
+        String errorMessage = error.optString("description", "Unknown error");
+        throw new StockDataFetchException("Yahoo Finance API error: " + errorMessage);
       }
 
-      JsonObject timeSeries = json.getAsJsonObject("Time Series (Daily)");
-      List<Double> prices = new ArrayList<>(MAX_DAYS);
+      JSONArray result = chart.getJSONArray("result");
+      if (result.length() == 0) {
+        throw new StockDataFetchException("No result found in JSON data");
+      }
+      JSONObject firstResult = result.getJSONObject(0);
+      JSONObject indicators = firstResult.getJSONObject("indicators");
+      JSONArray quoteArray = indicators.getJSONArray("quote");
 
-      timeSeries.keySet().stream()
-          .sorted((a, b) -> b.compareTo(a)) // Descending order (newest first)
-          .limit(MAX_DAYS)
-          .forEach(date -> {
-            double closePrice = timeSeries.get(date)
-                .getAsJsonObject()
-                .get("4. close")
-                .getAsDouble();
-            prices.add(closePrice);
-          });
+      if (quoteArray.length() == 0) {
+        throw new StockDataFetchException("No quote data found in JSON data");
+      }
 
-      return List.copyOf(prices);
-    } catch (JsonSyntaxException e) {
-      throw new StockDataFetchException("Failed to parse JSON response", e);
+      JSONObject quote = quoteArray.getJSONObject(0);
+      JSONArray closeArray = quote.getJSONArray("close");
+
+      List<Double> prices = new ArrayList<>();
+      for (int i = 0; i < closeArray.length(); i++) {
+        if (!closeArray.isNull(i)) {
+          prices.add(closeArray.getDouble(i));
+        }
+      }
+
+      if (prices.isEmpty()) {
+        throw new StockDataFetchException("No valid closing prices found in JSON data");
+      }
+
+      int startIndex = Math.max(0, prices.size() - MAX_DAYS);
+      List<Double> recentPrices = new ArrayList<>(prices.subList(startIndex, prices.size()));
+      Collections.reverse(recentPrices);
+      return List.copyOf(recentPrices);
     } catch (Exception e) {
-      throw new StockDataFetchException("Unexpected error parsing response", e);
+      throw new StockDataFetchException("Failed to parse JSON data: " + e.getMessage(), e);
     }
   }
 
@@ -100,15 +113,3 @@ public final class StockDataFetcher {
   }
 }
 
-/**
- * Custom exception for stock data fetch failures.
- */
-class StockDataFetchException extends Exception {
-  public StockDataFetchException(String message) {
-    super(message);
-  }
-
-  public StockDataFetchException(String message, Throwable cause) {
-    super(message, cause);
-  }
-}
