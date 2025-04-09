@@ -1,18 +1,29 @@
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Collections;
 
 /**
- * 股票预测算法实现（纯 Java）
+ * Provides stock price prediction algorithms.
+ * This class implements various prediction methods as pure functions,
+ * ensuring thread safety and immutability of inputs and outputs.
  */
-public class StockPredictor {
+public final class StockPredictor {
+
+  private StockPredictor() {
+    // Private constructor to prevent instantiation
+  }
 
   /**
-   * 简单移动平均预测
-   * @param prices 历史股价列表
-   * @param window 移动窗口大小
-   * @return 预测结果列表
+   * Calculates simple moving average for the given price series.
+   *
+   * @param prices Historical stock prices, ordered from most recent to oldest
+   * @param window Size of the moving window (must be positive and <= prices size)
+   * @return Unmodifiable list of moving average values
+   * @throws IllegalArgumentException if prices is null, empty, or window is invalid
    */
-  public List<Double> predictMovingAverage(List<Double> prices, int window) {
+  public static List<Double> predictMovingAverage(List<Double> prices, int window) {
+    validateInput(prices, window);
+
     List<Double> movingAverages = new ArrayList<>();
     for (int i = 0; i <= prices.size() - window; i++) {
       double sum = 0;
@@ -21,15 +32,25 @@ public class StockPredictor {
       }
       movingAverages.add(sum / window);
     }
-    return movingAverages;
+    return Collections.unmodifiableList(movingAverages);
   }
 
   /**
-   * 线性回归预测（简化版）
+   * Predicts future price using simplified linear regression.
+   *
+   * @param prices Historical stock prices, ordered from most recent to oldest
+   * @return Predicted future price
+   * @throws IllegalArgumentException if prices is null or empty
    */
-  public double predictLinearRegression(List<Double> prices) {
-    if (prices.isEmpty()) return 0;
-    double lastPrice = prices.get(prices.size() - 1);
-    return lastPrice * 1.05; // 假设上涨5%
+  public static double predictLinearRegression(List<Double> prices) {
+    if (prices == null || prices.isEmpty()) {
+      throw new IllegalArgumentException("Prices list cannot be null or empty");
+    }
+
+    double lastPrice = prices.get(0); // Most recent price is first in list
+    return lastPrice * 1.05; // Simplified prediction: 5% increase
   }
-}
+
+  private static void validateInput(List<Double> prices, int window) {
+    if (prices == null) {
+      throw new IllegalArgumentException
