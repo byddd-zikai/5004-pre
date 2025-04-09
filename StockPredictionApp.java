@@ -10,94 +10,114 @@ import javafx.stage.Stage;
 import java.util.List;
 
 /**
- * 股票预测系统主界面（JavaFX）
+ * JavaFX application for stock price prediction visualization.
+ * Implements the view layer of the application, separating UI concerns
+ * from business logic and data access.
  */
-public class StockPredictionApp extends Application {
+public final class StockPredictionApp extends Application {
   private LineChart<Number, Number> chart;
   private TextField stockSymbolInput;
   private Button predictBtn;
   private ComboBox<String> methodComboBox;
+  private ProgressIndicator progressIndicator;
 
   @Override
   public void start(Stage stage) {
-    // 1. 初始化控件
+    initializeUIComponents();
+    setupLayout(stage);
+  }
+
+  private void initializeUIComponents() {
     stockSymbolInput = new TextField("AAPL");
-    predictBtn = new Button("预测");
+    predictBtn = new Button("Predict");
     methodComboBox = new ComboBox<>();
-    methodComboBox.getItems().addAll("移动平均", "线性回归");
-    methodComboBox.setValue("移动平均");
+    progressIndicator = new ProgressIndicator();
+    progressIndicator.setVisible(false);
 
-    NumberAxis xAxis = new NumberAxis("天数", 0, 30, 1);
-    NumberAxis yAxis = new NumberAxis("价格", 0, 500, 10);
+    methodComboBox.getItems().addAll("Moving Average", "Linear Regression");
+    methodComboBox.setValue("Moving Average");
+
+    NumberAxis xAxis = new NumberAxis("Days", 0, 30, 1);
+    NumberAxis yAxis = new NumberAxis("Price", 0, 500, 10);
     chart = new LineChart<>(xAxis, yAxis);
-    chart.setTitle("股票价格预测");
+    chart.setTitle("Stock Price Prediction");
+    chart.setAnimated(false); // Better performance
 
-    // 2. 预测按钮事件
+    setupButtonAction();
+  }
+
+  private void setupButtonAction() {
     predictBtn.setOnAction(e -> {
-      String symbol = stockSymbolInput.getText().trim().toUpperCase();
+      String symbol = stockSymbolInput.getText().trim();
       if (symbol.isEmpty()) {
-        showAlert("错误", "请输入股票代码（如 AAPL）");
+        showAlert("Error", "Please enter a stock symbol (e.g., AAPL)");
         return;
       }
 
-      predictBtn.setText("预测中...");
-      predictBtn.setDisable(true);
+      setUILoadingState(true);
 
-      // 异步调用 API 和预测（避免阻塞 UI）
       new Thread(() -> {
-        List<Double> prices = StockDataCache.getData(symbol, false);
-        List<Double> predicted = null;
+        try {
+          List<Double> prices = StockDataCache.getData(symbol, false);
+          List<Double> predicted = getPrediction(methodComboBox.getValue(), prices);
 
-        // 根据选择的方法预测
-        String method = methodComboBox.getValue();
-        StockPredictor predictor = new StockPredictor();
-        if ("移动平均".equals(method)) {
-          predicted = predictor.predictMovingAverage(prices, 5);
-        } else {
-          double futurePrice = predictor.predictLinearRegression(prices);
-          predicted = List.of(prices.get(prices.size() - 1), futurePrice);
+          Platform.runLater(() -> {
+            updateChart(prices, predicted);
+            setUILoadingState(false);
+          });
+        } catch (Exception ex) {
+          Platform.runLater(() -> {
+            showAlert("Prediction Error",
+                "Failed to get prediction: " + ex.getMessage());
+            setUILoadingState(false);
+          });
         }
-
-        // 更新 UI（必须在 JavaFX 主线程执行）
-        Platform.runLater(() -> {
-          updateChart(prices, predicted);
-          predictBtn.setText("预测");
-          predictBtn.setDisable(false);
-        });
       }).start();
     });
+  }
 
-    // 3. 布局
+  private List<Double> getPrediction(String method, List<Double> prices) {
+    if ("Moving Average".equals(method)) {
+      return StockPredictor.predictMovingAverage(prices, 5);
+    } else {
+      double futurePrice = StockPredictor.predictLinearRegression(prices);
+      return List.of(prices.get(0), futurePrice); // Current and predicted price
+    }
+  }
+
+  private void setUILoadingState(boolean loading) {
+    predictBtn.setDisable(loading);
+    progressIndicator.setVisible(loading);
+    predictBtn.setText(loading ? "Predicting..." : "Predict");
+  }
+
+  private void setupLayout(Stage stage) {
     VBox root = new VBox(10,
-        new Label("股票代码（如 AAPL/MSFT）："),
+        new Label("Stock Symbol (e.g., AAPL/MSFT):"),
         stockSymbolInput,
-        new Label("预测方法："),
+        new Label("Prediction Method:"),
         methodComboBox,
-        predictBtn,
+        new HBox(10, predictBtn, progressIndicator),
         chart
     );
     root.setPadding(new javafx.geometry.Insets(10));
 
-    // 4. 显示窗口
     stage.setScene(new Scene(root, 800, 600));
-    stage.setTitle("Java 股票预测系统");
+    stage.setTitle("Java Stock Prediction System");
     stage.show();
   }
 
-  /** 更新图表 */
   private void updateChart(List<Double> prices, List<Double> predicted) {
     chart.getData().clear();
 
-    // 历史数据系列
     XYChart.Series<Number, Number> historySeries = new XYChart.Series<>();
-    historySeries.setName("历史数据");
+    historySeries.setName("Historical Data");
     for (int i = 0; i < prices.size(); i++) {
       historySeries.getData().add(new XYChart.Data<>(i, prices.get(i)));
     }
 
-    // 预测数据系列
     XYChart.Series<Number, Number> predictedSeries = new XYChart.Series<>();
-    predictedSeries.setName("预测数据");
+    predictedSeries.setName("Predicted Data");
     int startIndex = prices.size() - predicted.size();
     for (int i = 0; i < predicted.size(); i++) {
       predictedSeries.getData().add(new XYChart.Data<>(startIndex + i, predicted.get(i)));
@@ -106,7 +126,6 @@ public class StockPredictionApp extends Application {
     chart.getData().addAll(historySeries, predictedSeries);
   }
 
-  /** 显示错误弹窗 */
   private void showAlert(String title, String message) {
     Alert alert = new Alert(Alert.AlertType.ERROR);
     alert.setTitle(title);
