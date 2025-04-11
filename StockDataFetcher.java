@@ -44,7 +44,7 @@ public final class StockDataFetcher {
       conn.setRequestMethod("GET");
       conn.setConnectTimeout(5000);
       conn.setReadTimeout(5000);
-      conn.setRequestProperty("User-Agent", "Mozilla/5.0"); // 模拟浏览器请求
+      conn.setRequestProperty("User-Agent", "Mozilla/5.0"); 
 
       if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) {
         throw new StockDataFetchException(
@@ -66,7 +66,6 @@ public final class StockDataFetcher {
       JSONObject jsonObject = new JSONObject(jsonData);
       JSONObject chart = jsonObject.getJSONObject("chart");
 
-      // 检查返回的错误信息（若存在）
       if (!chart.isNull("error")) {
         JSONObject error = chart.getJSONObject("error");
         String errorMessage = error.optString("description", "Unknown error");
