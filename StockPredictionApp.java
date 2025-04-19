@@ -1,7 +1,7 @@
 import javax.swing.*;
 import java.awt.*;
 import java.util.List;
-
+import java.util.Collections;
 
 public class StockPredictionApp extends JFrame {
   private JTextField stockSymbolField;
@@ -10,9 +10,12 @@ public class StockPredictionApp extends JFrame {
   private JSplitPane splitPane;
   private ChartPanel chartPanel;
 
+  private JList<String> recentDataList;
+  private DefaultListModel<String> recentDataModel;
+
   public StockPredictionApp() {
     setTitle("StockPredictionApp");
-    setSize(800, 500);
+    setSize(800, 700);
     setDefaultCloseOperation(EXIT_ON_CLOSE);
     setLocationRelativeTo(null);
 
@@ -29,7 +32,6 @@ public class StockPredictionApp extends JFrame {
 
     chartPanel = new ChartPanel(List.of());
 
-
     splitPane = new JSplitPane(
         JSplitPane.HORIZONTAL_SPLIT,
         new JScrollPane(resultArea),
@@ -38,10 +40,18 @@ public class StockPredictionApp extends JFrame {
     splitPane.setDividerLocation(350);
     splitPane.setOneTouchExpandable(true);
 
+    recentDataModel = new DefaultListModel<>();
+    recentDataList  = new JList<>(recentDataModel);
+    JScrollPane recentScroll = new JScrollPane(recentDataList);
+    recentScroll.setBorder(
+        BorderFactory.createTitledBorder("Recent Prices (newest first)")
+    );
 
-    setLayout(new BorderLayout());
+
+    setLayout(new BorderLayout(5,5));
     add(inputPanel, BorderLayout.NORTH);
     add(splitPane,   BorderLayout.CENTER);
+    add(recentScroll, BorderLayout.SOUTH);
 
 
     predictButton.addActionListener(e -> {
@@ -66,11 +76,24 @@ public class StockPredictionApp extends JFrame {
 
             displayResults(symbol, prices, movingAvg, regres.get(1));
 
+
             ChartPanel newChart = new ChartPanel(prices);
             splitPane.setRightComponent(newChart);
+
+
+            recentDataModel.clear();
+            List<Double> reversed = prices.size() <= 10
+                ? prices
+                : prices.subList(0, 10);
+            Collections.reverse(reversed);
+            for (int i = 0; i < reversed.size(); i++) {
+              recentDataModel.addElement(
+                  String.format("Day %d: %.2f", i+1, reversed.get(i))
+              );
+            }
+
             revalidate();
             repaint();
-
             predictButton.setEnabled(true);
             predictButton.setText("Predict");
           });
@@ -116,4 +139,5 @@ public class StockPredictionApp extends JFrame {
     });
   }
 }
+
 
