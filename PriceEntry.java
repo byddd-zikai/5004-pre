@@ -1,8 +1,6 @@
 import java.time.LocalDate;
 
-/**
- * 将 LocalDate 与对应的收盘价捆绑，toString() 输出“YYYY‑MM‑DD → price”。
- */
+
 public final class PriceEntry {
   private final LocalDate date;
   private final double price;
