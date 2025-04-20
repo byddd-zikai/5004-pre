@@ -1,59 +1,62 @@
 import javax.swing.*;
 import java.awt.*;
 import java.util.List;
-import java.util.Collections;
+import java.util.stream.Collectors;
 
 public class StockPredictionApp extends JFrame {
-  private JTextField stockSymbolField;
-  private JButton predictButton;
-  private JTextArea resultArea;
-  private JSplitPane splitPane;
-  private ChartPanel chartPanel;
-
-  private JList<String> recentDataList;
-  private DefaultListModel<String> recentDataModel;
+  private final JTextField stockSymbolField;
+  private final JButton predictButton;
+  private final JTextArea resultArea;
+  private final JSplitPane splitPane;
+  private ChartPanel chartPanel;  // note non-final so we can replace it
+  private final DefaultListModel<PriceEntry> recentDataModel;
 
   public StockPredictionApp() {
-    setTitle("StockPredictionApp");
+    super("StockPredictionApp");
     setSize(800, 700);
     setDefaultCloseOperation(EXIT_ON_CLOSE);
     setLocationRelativeTo(null);
 
+    // input panel
     stockSymbolField = new JTextField("AAPL", 10);
-    predictButton     = new JButton("Predict");
+    predictButton    = new JButton("Predict");
     JPanel inputPanel = new JPanel();
     inputPanel.add(new JLabel("STOCK SYMBOL:"));
     inputPanel.add(stockSymbolField);
     inputPanel.add(predictButton);
 
-
+    // text area
     resultArea = new JTextArea();
     resultArea.setEditable(false);
+    JScrollPane textScroll = new JScrollPane(resultArea);
 
-    chartPanel = new ChartPanel(List.of());
+    // initial (empty) chart panel
+    chartPanel = new ChartPanel(List.<PriceEntry>of());
 
+    // split pane: left=text, right=chart
     splitPane = new JSplitPane(
         JSplitPane.HORIZONTAL_SPLIT,
-        new JScrollPane(resultArea),
+        textScroll,
         chartPanel
     );
     splitPane.setDividerLocation(350);
     splitPane.setOneTouchExpandable(true);
 
+    // recent prices list
     recentDataModel = new DefaultListModel<>();
-    recentDataList  = new JList<>(recentDataModel);
-    JScrollPane recentScroll = new JScrollPane(recentDataList);
-    recentScroll.setBorder(
-        BorderFactory.createTitledBorder("Recent Prices (newest first)")
-    );
+    JList<PriceEntry> recentList = new JList<>(recentDataModel);
+    JScrollPane listScroll = new JScrollPane(recentList);
+    listScroll.setBorder(BorderFactory.createTitledBorder(
+        "Recent Prices (old→new, Date → Price)"
+    ));
 
-
+    // layout
     setLayout(new BorderLayout(5,5));
     add(inputPanel, BorderLayout.NORTH);
     add(splitPane,   BorderLayout.CENTER);
-    add(recentScroll, BorderLayout.SOUTH);
+    add(listScroll,  BorderLayout.SOUTH);
 
-
+    // button listener
     predictButton.addActionListener(e -> {
       String symbol = stockSymbolField.getText().trim();
       if (symbol.isEmpty()) {
@@ -68,32 +71,26 @@ public class StockPredictionApp extends JFrame {
 
       new Thread(() -> {
         try {
-          List<Double> prices    = StockDataCache.getData(symbol, false);
+          // fetch entries (with dates + prices)
+          List<PriceEntry> entries = StockDataFetcher.fetchPriceEntries(symbol);
+          // extract just prices for predictor
+          List<Double> prices = entries.stream()
+              .map(PriceEntry::getPrice)
+              .collect(Collectors.toList());
           List<Double> movingAvg = StockPredictor.predictMovingAverage(prices, 5);
           List<Double> regres    = StockPredictor.predictLinearRegression(prices);
 
           SwingUtilities.invokeLater(() -> {
-
+            // update text results
             displayResults(symbol, prices, movingAvg, regres.get(1));
-
-
-            ChartPanel newChart = new ChartPanel(prices);
-            splitPane.setRightComponent(newChart);
-
-
+            // update chartPanel with entries
+            chartPanel = new ChartPanel(entries);
+            splitPane.setRightComponent(chartPanel);
+            // update recent list
             recentDataModel.clear();
-            List<Double> reversed = prices.size() <= 10
-                ? prices
-                : prices.subList(0, 10);
-            Collections.reverse(reversed);
-            for (int i = 0; i < reversed.size(); i++) {
-              recentDataModel.addElement(
-                  String.format("Day %d: %.2f", i+1, reversed.get(i))
-              );
+            for (PriceEntry pe : entries) {
+              recentDataModel.addElement(pe);
             }
-
-            revalidate();
-            repaint();
             predictButton.setEnabled(true);
             predictButton.setText("Predict");
           });
@@ -115,14 +112,22 @@ public class StockPredictionApp extends JFrame {
     StringBuilder sb = new StringBuilder();
     sb.append("=== ").append(symbol).append(" Predict result ===\n\n");
 
-    sb.append("Ending price for 5 days:\n");
-    for (int i = 0; i < Math.min(5, prices.size()); i++) {
-      sb.append(String.format("Day %d: %.2f\n", i + 1, prices.get(i)));
+    sb.append("Ending price for last 5 days:\n");
+    int priceCount = prices.size();
+    int startP     = Math.max(0, priceCount - 5);
+    for (int i = startP; i < priceCount; i++) {
+      sb.append(String.format("Day %d: %.2f\n",
+          i - startP + 1,
+          prices.get(i)));
     }
 
-    sb.append("\nAverage move for 5 days:\n");
-    for (int i = 0; i < movingAvg.size(); i++) {
-      sb.append(String.format("Day %d: %.2f\n", i + 1, movingAvg.get(i)));
+    sb.append("\nAverage move for last 5 days:\n");
+    int maCount = movingAvg.size();
+    int startM  = Math.max(0, maCount - 5);
+    for (int i = startM; i < maCount; i++) {
+      sb.append(String.format("Day %d: %.2f\n",
+          i - startM + 1,
+          movingAvg.get(i)));
     }
 
     sb.append(String.format(
@@ -139,5 +144,3 @@ public class StockPredictionApp extends JFrame {
     });
   }
 }
-
-
