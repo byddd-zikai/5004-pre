@@ -1,17 +1,16 @@
-import org.apache.commons.math3.stat.regression.SimpleRegression;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Collections;
-
+import org.apache.commons.math3.stat.regression.SimpleRegression;
 
 public final class StockPredictor {
 
-  private StockPredictor() {
-  }
+  private StockPredictor() {}
 
   public static List<Double> predictMovingAverage(List<Double> prices, int window) {
-    validateInput(prices, window);
-
+    if (prices == null || prices.isEmpty() || window <= 0 || window > prices.size()) {
+      throw new IllegalArgumentException("Invalid prices or window size");
+    }
     List<Double> movingAverages = new ArrayList<>();
     for (int i = 0; i <= prices.size() - window; i++) {
       double sum = 0;
@@ -24,59 +23,22 @@ public final class StockPredictor {
   }
 
   public static List<Double> predictLinearRegression(List<Double> prices) {
-    if (prices == null || prices.isEmpty()) {
-      throw new IllegalArgumentException("Prices list cannot be null or empty");
+    if (prices == null || prices.size() < 5) {
+      throw new IllegalArgumentException("Need at least 5 data points for regression");
     }
 
-    SimpleRegression regression = new SimpleRegression();
-    for (int i = 0; i < prices.size(); i++) {
-      regression.addData(i, prices.get(i));
+    int window = 5;
+    List<Double> windowPrices = prices.subList(prices.size() - window, prices.size());
+
+    SimpleRegression regression = new SimpleRegression(true);
+    for (int i = 0; i < window; i++) {
+      regression.addData(i, windowPrices.get(i));
     }
 
-    double currentPrice = prices.get(0);
-    double nextDayPrice = regression.predict(prices.size());
-    double twoDaysLaterPrice = regression.predict(prices.size() + 1);
+    double currentPrice = windowPrices.get(window - 1);
+    double nextDayPrice = regression.predict(window);
 
-    return List.of(currentPrice, nextDayPrice, twoDaysLaterPrice);
-  }
-
-
-  public static List<Double> predictExponentialSmoothing(List<Double> prices, double alpha) {
-    if (prices == null || prices.isEmpty()) {
-      throw new IllegalArgumentException("Prices list cannot be null or empty");
-    }
-    if (alpha <= 0 || alpha >= 1) {
-      throw new IllegalArgumentException("Alpha must be between 0 and 1");
-    }
-
-    List<Double> smoothed = new ArrayList<>();
-    double lastSmoothed = prices.get(0);
-    smoothed.add(lastSmoothed);
-
-    for (int i = 1; i < prices.size(); i++) {
-      lastSmoothed = alpha * prices.get(i) + (1 - alpha) * lastSmoothed;
-      smoothed.add(lastSmoothed);
-    }
-
-    double nextValue = alpha * prices.get(prices.size()-1) + (1 - alpha) * lastSmoothed;
-    smoothed.add(nextValue);
-
-    return Collections.unmodifiableList(smoothed);
-  }
-
-  private static void validateInput(List<Double> prices, int window) {
-    if (prices == null) {
-      throw new IllegalArgumentException("Prices list cannot be null");
-    }
-    if (prices.isEmpty()) {
-      throw new IllegalArgumentException("Prices list cannot be empty");
-    }
-    if (window <= 0) {
-      throw new IllegalArgumentException("Window size must be positive");
-    }
-    if (window > prices.size()) {
-      throw new IllegalArgumentException(
-          "Window size cannot be larger than prices list size");
-    }
+    return List.of(currentPrice, nextDayPrice);
   }
 }
+
